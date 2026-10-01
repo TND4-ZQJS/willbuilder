@@ -24,12 +24,19 @@ button.del{background:transparent;color:#ff3b30;padding:6px}
 .security-box{border-left:3px solid #86868b;padding:10px 16px;font-size:14px;color:#6e6e73;margin:10px 0}
 .warn{color:#ff3b30;font-size:.85rem;margin-top:4px}
 .card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;background:#fff}
-#doc{position:relative;font:14px/1.7 "Times New Roman",serif;background:#fff;padding:24px;border:1px solid #ddd;overflow:hidden}
-#doc h3{text-align:center;text-decoration:underline;margin-bottom:14px}
-#doc .cl{display:flex;gap:16px;margin:10px 0;text-align:justify}#doc .cl b{min-width:26px;font-weight:400}
-#doc .sub{margin-left:42px;display:flex;justify-content:space-between}
-#doc.demo::before{content:"SAMPLE";position:absolute;top:35%;left:8%;font-size:110px;color:rgba(0,0,0,.07);transform:rotate(-35deg);pointer-events:none;font-family:sans-serif;font-weight:700}
-.wit{display:flex;gap:40px;margin-top:40px}.wit div{flex:1}
+#doc{position:relative;font:11pt/1.6 Arial,Helvetica,sans-serif;background:#fff;border:1px solid #ddd;overflow:hidden;color:#000}
+#doc .cover{min-height:900px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:90px;text-align:center;font-weight:700;font-size:14pt;padding:40px}
+#doc .main{padding:48px 56px}
+#doc h3{text-align:center;text-decoration:underline;font-size:11pt;margin-bottom:22px}
+#doc p.open{text-align:justify;margin-bottom:22px}
+#doc .cl{display:grid;grid-template-columns:52px 1fr;margin:0 0 22px;text-align:justify}
+#doc .sub{display:flex;justify-content:space-between;margin:14px 0}
+#doc .tail{margin-top:14px}
+#doc .sign{page-break-inside:avoid;margin-top:30px}
+#doc .att{display:grid;grid-template-columns:52% auto;margin:6px 0 60px;line-height:1.7}
+#doc .wit{display:flex;gap:40px}#doc .wit div{flex:1}
+#doc.demo::before{content:"SAMPLE";position:absolute;top:40%;left:8%;font-size:110px;color:rgba(0,0,0,.07);transform:rotate(-35deg);pointer-events:none;font-weight:700;z-index:2}
+@media print{#doc .cover{min-height:92vh;page-break-after:always}#doc .main{padding:0}#doc.demo::before{position:fixed}}
 @media print{.no-print{display:none!important}body{background:#fff}.container{margin:0;padding:0}.wizard-step{border:0;padding:0}#doc{border:0}}
 </style></head><body>
 <div class="navbar no-print">Will Builder · Demo</div>
@@ -45,7 +52,7 @@ button.del{background:transparent;color:#ff3b30;padding:6px}
 /* ===== CONFIG (split into /clauses/my.json and /scenarios/*.json later) ===== */
 const DEMO=true,KEY=DEMO?'will_demo':'will_real';
 const CL={
- revoke:"I, {t} of {addr}, revoke all earlier wills and testamentary documents I have made, and declare this to be my Last Will and Testament.",
+ revoke:"revoke all earlier wills and testamentary documents I have made, and declare this to be my Last Will and Testament.",
  exec:"I appoint {p} as the sole Executor and Trustee of this Will.",
  backup:"If {p} dies before me or is unable or unwilling to act, I appoint {b} as Executor and Trustee instead.",
  debts:"My Executor and Trustee shall pay my funeral and testamentary expenses, my debts and all duties payable because of my death from my estate.",
@@ -106,12 +113,12 @@ const vis=()=>STEPS.map((s,i)=>i).filter(i=>!STEPS[i].showIf||STEPS[i].showIf())
 /* ===== WILL RENDERER: builds clauses in fixed order, numbers at render time ===== */
 const fill=(t,v)=>t.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
 function clauses(){
- const c=[],T=S.testator,add=(x,sub)=>c.push({x,sub});
+ const c=[],T=S.testator,add=(x,sub,tail)=>c.push({x,sub,tail});
  add(fill(CL.exec,{p:P(S.executorId)}));
  if(S.backupId)add(fill(CL.backup,{p:P(S.executorId),b:P(S.backupId)}));
  add(CL.debts);
  if(T.kids&&S.guardianId)add(fill(CL.guardian,{p:P(S.guardianId)}));
- S.properties.forEach(pr=>{if(pr.shares.length===1&&pr.shares[0].pid)add(fill(CL.propOne,{addr:pr.address,p:P(pr.shares[0].pid)}));else{add(fill(CL.propMany,{addr:pr.address}),pr.shares.map(s=>[P(s.pid),s.pct+'%']));add(CL.predeceased)}});
+ S.properties.forEach(pr=>{if(pr.shares.length===1&&pr.shares[0].pid)add(fill(CL.propOne,{addr:pr.address,p:P(pr.shares[0].pid)}));else{add(fill(CL.propMany,{addr:pr.address}),pr.shares.map(s=>[P(s.pid),s.pct+'%']),CL.predeceased)}});
  S.gifts.forEach(g=>add(fill(CL.cash,{amt:g.amount,p:P(g.pid)})));
  S.items.forEach(g=>add(fill(CL.item,{desc:g.desc,p:P(g.pid)})));
  if(S.properties.length||S.gifts.length||S.items.length)add(CL.sale);
@@ -120,12 +127,16 @@ function clauses(){
  return c;
 }
 function docHtml(){
- const T=S.testator,d=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
- return `<div id="doc" class="${DEMO?'demo':''}"><h3>LAST WILL AND TESTAMENT</h3><p>${e(fill(CL.revoke,{t:`<b>${T.name}</b> (NRIC No. ${T.nric})`,addr:T.address})).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</p>`+
- clauses().map((c,i)=>`<div class="cl"><b>${i+1}.</b><span>${e(c.x)}</span></div>`+(c.sub||[]).map(s=>`<div class="sub"><span>${e(s[0])}</span><span>${e(s[1])}</span></div>`).join('')).join('')+
- `<p style="margin-top:24px">SIGNED by ${e(T.name)} (NRIC No. ${e(T.nric)}) as his/her last Will on ${d}, in the presence of both of us, present at the same time, who at his/her request and in the presence of each other have signed as witnesses.</p><div class="wit"><div>..............................<br>Witness 1<br>Name:<br>NRIC No.:</div><div>..............................<br>Witness 2<br>Name:<br>NRIC No.:</div></div><p class="muted" style="margin-top:20px">Witnesses should not be beneficiaries or spouses of beneficiaries.</p></div>`;
+ const T=S.testator,dt=new Date(),D=dt.getDate(),M=dt.toLocaleDateString('en-GB',{month:'long'}),Y=dt.getFullYear(),L='abcdefghijklmnop';
+ const body=clauses().map((c,i)=>`<div class="cl"><span>${i+1}.</span><div>${e(c.x)}${(c.sub||[]).map((s,j)=>`<div class="sub"><span>(${L[j]})&nbsp;&nbsp;${e(s[0])}</span><span>${e(s[1])}</span></div>`).join('')}${c.tail?`<p class="tail">${e(c.tail)}</p>`:''}</div></div>`).join('');
+ const att=['as his/her last Will and testament in the','presence of us both, present at the','same time who at his/her request in','the presence of each other have','hereunto subscribed our names as','witnesses'];
+ const wit='<div>……………………………………<br>Witness:<br>Name:<br>NRIC No.:</div>';
+ return `<div id="doc" class="${DEMO?'demo':''}"><div class="cover"><div>THE LAST WILL AND TESTAMENT</div><div>OF</div><div>${e(T.name.toUpperCase())}</div><div>DATED THIS ${D} DAY OF ${M.toUpperCase()} ${Y}</div></div>
+ <div class="main"><h3>LAST WILL AND TESTAMENT</h3><p class="open">I, <b>${e(T.name)} (NRIC No. ${e(T.nric)})</b> of ${e(T.address)}, ${e(CL.revoke)}</p>${body}
+ <div class="sign"><p>IN WITNESS WHEREOF I have hereunto set my hand this ${D} day of ${M} ${Y}</p><p style="margin-top:36px">Signed by<br><b>${e(T.name)}</b><br>(NRIC No. ${e(T.nric)})</p>
+ <div class="att"><div>${att.join('<br>')}</div><div>${att.map(()=>')').join('<br>')}</div></div>
+ <div class="wit">${wit}${wit}</div><p class="muted" style="margin-top:24px">Witnesses should not be beneficiaries or spouses of beneficiaries.</p></div></div></div>`;
 }
-
 /* ===== UI ===== */
 function render(){
  const v=vis();if(!v.includes(cur))cur=v[0];
