@@ -1,0 +1,160 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Will Builder (Demo)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--accent:#0071e3;--bg:#f5f5f7;--surface:#fff;--text-primary:#1d1d1f;--text-tertiary:#86868b;--line:#e9e9ee}
+body{background:var(--bg);color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;line-height:1.5}
+.navbar{position:sticky;top:0;z-index:9;background:rgba(255,255,255,.85);backdrop-filter:blur(20px);border-bottom:1px solid rgba(0,0,0,.06);height:52px;display:flex;align-items:center;padding:0 24px;font-weight:700}
+.container{max-width:940px;margin:24px auto;padding:0 16px}
+.section{background:#fbfbfd;border:1px solid #eee;padding:14px;border-radius:10px;margin:12px 0}
+.section h2{font-size:1.05rem;margin-bottom:8px}
+label{display:block;margin:8px 0;font-size:.95rem}
+input[type=text],input[type=number],select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;margin-top:6px;font-size:1rem;background:#fff}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}.row>*{flex:1;min-width:140px}
+.muted{color:var(--text-tertiary);font-size:.85rem}
+button{background:var(--accent);color:#fff;border:0;padding:10px 16px;border-radius:10px;cursor:pointer;font-weight:500;font-size:.95rem}
+button.ghost{background:transparent;border:1px solid var(--line);color:#333}
+button.del{background:transparent;color:#ff3b30;padding:6px}
+.step-indicator{display:flex;gap:8px;background:#fff;padding:12px;border-radius:12px;border:1px solid var(--line);overflow-x:auto;margin-bottom:16px}
+.step{flex:1;min-width:76px;text-align:center;font-size:.75rem;color:#888;cursor:pointer;padding:6px;border-radius:8px}
+.step.active{color:var(--accent);font-weight:600;background:#f0f7ff}
+.step-num{display:block;width:26px;height:26px;line-height:26px;border-radius:50%;background:#eee;margin:0 auto 4px;color:#333}
+.step.active .step-num{background:var(--accent);color:#fff}
+.wizard-step{background:var(--surface);padding:14px;border-radius:18px;border:1px solid rgba(0,0,0,.02)}
+.wizard-actions{display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.security-box{border-left:3px solid #86868b;padding:10px 16px;font-size:14px;color:#6e6e73;margin:10px 0}
+.warn{color:#ff3b30;font-size:.85rem;margin-top:4px}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;background:#fff}
+#doc{position:relative;font:14px/1.7 "Times New Roman",serif;background:#fff;padding:24px;border:1px solid #ddd;overflow:hidden}
+#doc h3{text-align:center;text-decoration:underline;margin-bottom:14px}
+#doc .cl{display:flex;gap:16px;margin:10px 0;text-align:justify}#doc .cl b{min-width:26px;font-weight:400}
+#doc .sub{margin-left:42px;display:flex;justify-content:space-between}
+#doc.demo::before{content:"SAMPLE";position:absolute;top:35%;left:8%;font-size:110px;color:rgba(0,0,0,.07);transform:rotate(-35deg);pointer-events:none;font-family:sans-serif;font-weight:700}
+.wit{display:flex;gap:40px;margin-top:40px}.wit div{flex:1}
+@media print{.no-print{display:none!important}body{background:#fff}.container{margin:0;padding:0}.wizard-step{border:0;padding:0}#doc{border:0}}
+</style></head><body>
+<div class="navbar no-print">Will Builder · Demo</div>
+<div class="container">
+<div class="security-box no-print">Demo mode: sample data only. Your entries stay in this browser and are never sent anywhere. Wording is not lawyer-reviewed; have a lawyer review any real will.</div>
+<div id="picker" class="section no-print"></div>
+<div id="steps" class="step-indicator no-print"></div>
+<div class="wizard-step"><div id="app"></div>
+<div class="wizard-actions no-print"><button class="ghost" data-a="prev">Back</button><button data-a="next" id="nextBtn">Next</button></div></div>
+<div class="row no-print" style="margin-top:14px"><button class="ghost" data-a="dl">Download progress</button><label class="ghost" style="margin:0;text-align:center;padding:10px;border:1px solid var(--line);border-radius:10px;cursor:pointer">Load progress<input type="file" id="ld" accept=".json" hidden></label><button class="ghost" data-a="reset">Clear all</button></div>
+</div>
+<script>
+/* ===== CONFIG (split into /clauses/my.json and /scenarios/*.json later) ===== */
+const DEMO=true,KEY=DEMO?'will_demo':'will_real';
+const CL={
+ revoke:"I, {t} of {addr}, revoke all earlier wills and testamentary documents I have made, and declare this to be my Last Will and Testament.",
+ exec:"I appoint {p} as the sole Executor and Trustee of this Will.",
+ backup:"If {p} dies before me or is unable or unwilling to act, I appoint {b} as Executor and Trustee instead.",
+ debts:"My Executor and Trustee shall pay my funeral and testamentary expenses, my debts and all duties payable because of my death from my estate.",
+ guardian:"If my spouse dies before me, I appoint {p} as guardian of my minor children.",
+ propOne:"I give my share in the property at {addr} to {p} absolutely.",
+ propMany:"I give my share in the property at {addr} to the following beneficiaries in the shares stated:",
+ predeceased:"If a beneficiary above dies before me, that beneficiary's share passes to the surviving beneficiaries in proportion to their shares.",
+ cash:"I give the sum of RM{amt} to {p}.",
+ item:"I give {desc} to {p}.",
+ sale:"If my Trustee cannot practicably distribute any property as set out in this Will, my Trustee may sell it, without liability for loss, and divide the proceeds among the beneficiaries according to their entitlements.",
+ residue:"I give all the rest of my estate, after payment of debts, to {p} absolutely.",
+ funeral:"My wishes for my funeral are as follows: {text}"
+};
+const SC=[
+ {id:'kids',title:'Married with young children',note:'Guardian step appears; property shared 50/50.',data:{
+  testator:{name:'Peter Foo',nric:'000000-00-0000',address:'Lot 10 Taman Murni, 16250 Wakaf Bharu, Kelantan',kids:true},
+  people:[{id:'a',name:'Michael Ng',nric:'000000-00-0000',rel:'Friend'},{id:'b',name:'Sarah Wong',nric:'000000-00-0000',rel:'Friend'},{id:'c',name:'Natasha Goh',nric:'000000-00-0000',rel:'Sister'},{id:'d',name:'Jacleen Lee',nric:'000000-00-0000',rel:'Spouse'},{id:'e',name:'Naomi Foo',nric:'000000-00-0000',rel:'Daughter'}],
+  executorId:'a',backupId:'b',guardianId:'c',
+  properties:[{address:'Lot 10 Taman Murni, 16250 Wakaf Bharu, Kelantan',shares:[{pid:'d',pct:100}]},{address:'Apartment 1, 50000 Kuala Lumpur',shares:[{pid:'d',pct:50},{pid:'e',pct:50}]}],
+  gifts:[{pid:'a',amount:'10,000.00'},{pid:'c',amount:'20,000.00'}],items:[{desc:'my vehicle with Registration No. CLE 1111',pid:'d'}],
+  residuaryId:'d',funeral:{on:true,text:'a simple ceremony with close family only.'}}},
+ {id:'min',title:'Minimal will',note:'Only an executor and a residuary; guardian step skipped.',data:{
+  testator:{name:'Aiman Hakim',nric:'000000-00-0000',address:'12 Jalan Damai, 50000 Kuala Lumpur',kids:false},
+  people:[{id:'a',name:'Siti Hakim',nric:'000000-00-0000',rel:'Mother'}],executorId:'a',backupId:'',guardianId:'',
+  properties:[],gifts:[],items:[],residuaryId:'a',funeral:{on:false,text:''}}}
+];
+const TPL={people:()=>({id:'p'+Date.now()+Math.random().toString(36).slice(2,5),name:'',nric:'',rel:''}),properties:()=>({address:'',shares:[{pid:'',pct:100}]}),shares:()=>({pid:'',pct:0}),gifts:()=>({pid:'',amount:''}),items:()=>({desc:'',pid:''})};
+const blank=()=>({testator:{name:'',nric:'',address:'',kids:false},people:[],executorId:'',backupId:'',guardianId:'',properties:[],gifts:[],items:[],residuaryId:'',funeral:{on:false,text:''}});
+
+/* ===== ENGINE ===== */
+const $=s=>document.querySelector(s),clone=o=>JSON.parse(JSON.stringify(o));
+const get=(o,p)=>p.split('.').reduce((a,k)=>a==null?a:a[k],o);
+const set=(o,p,v)=>{const k=p.split('.'),l=k.pop();k.reduce((a,x)=>a[x],o)[l]=v};
+const e=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let S;try{S=JSON.parse(localStorage.getItem(KEY))||blank()}catch(x){S=blank()}
+let cur=0,scen=SC[0];
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(x){}};
+const P=id=>{const p=S.people.find(x=>x.id===id);return p?`${p.name} (NRIC No. ${p.nric})`:'[not selected]'};
+const sel=(k,ph='Select person')=>`<select data-k="${k}"><option value="">${ph}</option>${S.people.map(p=>`<option value="${p.id}" ${p.id===get(S,k)?'selected':''}>${e(p.name||'(unnamed)')}</option>`).join('')}</select>`;
+const inp=(k,l,t='text')=>`<label>${l}<input type="${t}" data-k="${k}" value="${e(get(S,k))}"></label>`;
+const tip=t=>`<p class="muted">${t}</p>`;
+const total=pr=>pr.shares.reduce((a,s)=>a+(+s.pct||0),0);
+
+/* Each step: title, optional showIf, keys (for "fill this step"), render */
+const STEPS=[
+ {t:'About you',keys:['testator'],why:'Identifies you and revokes any earlier will.',r:()=>inp('testator.name','Full name')+inp('testator.nric','NRIC No.')+inp('testator.address','Address')+`<label><input type="checkbox" data-k="testator.kids" data-re="1" ${S.testator.kids?'checked':''}> I have minor children</label>`},
+ {t:'People',keys:['people'],why:'Add each person once. Later steps pick from this list.',r:()=>S.people.map((p,i)=>`<div class="card"><div class="row"><label>Name<input type="text" data-k="people.${i}.name" value="${e(p.name)}"></label><label>NRIC<input type="text" data-k="people.${i}.nric" value="${e(p.nric)}"></label><label>Relationship<input type="text" data-k="people.${i}.rel" value="${e(p.rel)}"></label><button class="del" data-a="del:people.${i}">Remove</button></div></div>`).join('')+`<button class="ghost" data-a="add:people">+ Add person</button>`},
+ {t:'Executor',keys:['executorId','backupId'],why:'The executor carries out your will. A backup steps in if needed.',r:()=>`<label>Executor and Trustee${sel('executorId')}</label><label>Backup (optional)${sel('backupId','None')}</label>`},
+ {t:'Guardian',keys:['guardianId'],showIf:()=>S.testator.kids,why:'Only asked because you have minor children.',r:()=>`<label>Guardian if spouse dies before you${sel('guardianId')}</label>`},
+ {t:'Properties',keys:['properties'],why:'Shares for each property must total 100%.',r:()=>S.properties.map((pr,i)=>`<div class="card">${inp(`properties.${i}.address`,'Property address')}${pr.shares.map((s,j)=>`<div class="row"><label>Recipient${sel(`properties.${i}.shares.${j}.pid`)}</label><label>Share %<input type="number" data-k="properties.${i}.shares.${j}.pct" data-re="1" value="${e(s.pct)}"></label><button class="del" data-a="del:properties.${i}.shares.${j}">✕</button></div>`).join('')}${total(pr)!==100?`<div class="warn">Shares total ${total(pr)}%, must be 100%.</div>`:''}<button class="ghost" data-a="add:properties.${i}.shares">+ Recipient</button> <button class="del" data-a="del:properties.${i}">Remove property</button></div>`).join('')+`<button class="ghost" data-a="add:properties">+ Add property</button>`},
+ {t:'Gifts',keys:['gifts','items'],why:'Cash gifts and specific items (e.g. a vehicle).',r:()=>'<h2>Cash gifts</h2>'+S.gifts.map((g,i)=>`<div class="row"><label>Recipient${sel(`gifts.${i}.pid`)}</label><label>Amount (RM)<input type="text" data-k="gifts.${i}.amount" value="${e(g.amount)}"></label><button class="del" data-a="del:gifts.${i}">✕</button></div>`).join('')+'<button class="ghost" data-a="add:gifts">+ Cash gift</button><h2 style="margin-top:16px">Specific items</h2>'+S.items.map((g,i)=>`<div class="row"><label>Item<input type="text" data-k="items.${i}.desc" value="${e(g.desc)}"></label><label>Recipient${sel(`items.${i}.pid`)}</label><button class="del" data-a="del:items.${i}">✕</button></div>`).join('')+'<button class="ghost" data-a="add:items">+ Item</button>'},
+ {t:'Residuary',keys:['residuaryId'],why:'Who receives everything not given elsewhere.',r:()=>`<label>Everything else goes to${sel('residuaryId')}</label>`},
+ {t:'Extras',keys:['funeral'],why:'Optional clauses. Each one is just an entry in the clause library.',r:()=>`<label><input type="checkbox" data-k="funeral.on" data-re="1" ${S.funeral.on?'checked':''}> Add funeral wishes</label>${S.funeral.on?`<label>Your wishes<textarea data-k="funeral.text" rows="3">${e(S.funeral.text)}</textarea></label>`:''}`},
+ {t:'Review',why:'Preview, then print or save as PDF.',r:()=>docHtml()+'<div class="no-print row" style="margin-top:14px"><button data-a="print">Print / Save as PDF</button></div>'}
+];
+const vis=()=>STEPS.map((s,i)=>i).filter(i=>!STEPS[i].showIf||STEPS[i].showIf());
+
+/* ===== WILL RENDERER: builds clauses in fixed order, numbers at render time ===== */
+const fill=(t,v)=>t.replace(/\{(\w+)\}/g,(m,k)=>v[k]??m);
+function clauses(){
+ const c=[],T=S.testator,add=(x,sub)=>c.push({x,sub});
+ add(fill(CL.exec,{p:P(S.executorId)}));
+ if(S.backupId)add(fill(CL.backup,{p:P(S.executorId),b:P(S.backupId)}));
+ add(CL.debts);
+ if(T.kids&&S.guardianId)add(fill(CL.guardian,{p:P(S.guardianId)}));
+ S.properties.forEach(pr=>{if(pr.shares.length===1&&pr.shares[0].pid)add(fill(CL.propOne,{addr:pr.address,p:P(pr.shares[0].pid)}));else{add(fill(CL.propMany,{addr:pr.address}),pr.shares.map(s=>[P(s.pid),s.pct+'%']));add(CL.predeceased)}});
+ S.gifts.forEach(g=>add(fill(CL.cash,{amt:g.amount,p:P(g.pid)})));
+ S.items.forEach(g=>add(fill(CL.item,{desc:g.desc,p:P(g.pid)})));
+ if(S.properties.length||S.gifts.length||S.items.length)add(CL.sale);
+ add(fill(CL.residue,{p:P(S.residuaryId)}));
+ if(S.funeral.on)add(fill(CL.funeral,{text:S.funeral.text}));
+ return c;
+}
+function docHtml(){
+ const T=S.testator,d=new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+ return `<div id="doc" class="${DEMO?'demo':''}"><h3>LAST WILL AND TESTAMENT</h3><p>${e(fill(CL.revoke,{t:`<b>${T.name}</b> (NRIC No. ${T.nric})`,addr:T.address})).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</p>`+
+ clauses().map((c,i)=>`<div class="cl"><b>${i+1}.</b><span>${e(c.x)}</span></div>`+(c.sub||[]).map(s=>`<div class="sub"><span>${e(s[0])}</span><span>${e(s[1])}</span></div>`).join('')).join('')+
+ `<p style="margin-top:24px">SIGNED by ${e(T.name)} (NRIC No. ${e(T.nric)}) as his/her last Will on ${d}, in the presence of both of us, present at the same time, who at his/her request and in the presence of each other have signed as witnesses.</p><div class="wit"><div>..............................<br>Witness 1<br>Name:<br>NRIC No.:</div><div>..............................<br>Witness 2<br>Name:<br>NRIC No.:</div></div><p class="muted" style="margin-top:20px">Witnesses should not be beneficiaries or spouses of beneficiaries.</p></div>`;
+}
+
+/* ===== UI ===== */
+function render(){
+ const v=vis();if(!v.includes(cur))cur=v[0];
+ $('#steps').innerHTML=v.map((i,n)=>`<div class="step ${i===cur?'active':''}" data-a="go:${i}"><span class="step-num">${n+1}</span>${STEPS[i].t}</div>`).join('');
+ const s=STEPS[cur];
+ $('#app').innerHTML=`<div class="section"><h2>${s.t}</h2>${tip(s.why)}${DEMO&&s.keys?`<button class="ghost no-print" data-a="fillstep">Fill this step (sample)</button>`:''}</div>`+s.r();
+ $('#nextBtn').style.visibility=cur===v[v.length-1]?'hidden':'visible';
+}
+function pick(){
+ $('#picker').innerHTML='<h2>Try a scenario</h2>'+SC.map(s=>`<div class="card"><b>${s.title}</b><p class="muted">What changes: ${s.note}</p><button class="ghost" data-a="load:${s.id}">Load</button> <button data-a="review:${s.id}">Fill all and view will</button></div>`).join('');
+}
+function act(a){
+ const [n,arg]=[a.split(':')[0],a.split(':').slice(1).join(':')];
+ if(n==='go')cur=+arg;
+ else if(n==='next'||n==='prev'){const v=vis(),i=v.indexOf(cur)+(n==='next'?1:-1);cur=v[Math.max(0,Math.min(v.length-1,i))]}
+ else if(n==='add'){const a2=get(S,arg)||[];a2.push(TPL[arg.split('.').pop()]());set(S,arg,a2)}
+ else if(n==='del'){const k=arg.split('.'),i=k.pop(),arr=get(S,k.join('.'));
+  if(k.join('.')==='people'&&JSON.stringify({...S,people:0}).includes('"'+arr[i].id+'"')){alert('This person is used in your will. Remove them from other steps first.');return}
+  arr.splice(i,1)}
+ else if(n==='load'||n==='review'){scen=SC.find(s=>s.id===arg);S=clone(scen.data);if(n==='review')cur=STEPS.length-1;else cur=0}
+ else if(n==='fillstep'){STEPS[cur].keys.forEach(k=>S[k]=clone(scen.data[k]))}
+ else if(n==='print')return window.print();
+ else if(n==='reset'){if(!confirm('Clear all data?'))return;S=blank();cur=0}
+ else if(n==='dl'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download='will-progress.json';a.click();return}
+ save();render();scrollTo(0,0);
+}
+document.addEventListener('click',ev=>{const t=ev.target.closest('[data-a]');if(t)act(t.dataset.a)});
+$('#app').addEventListener('input',ev=>{const t=ev.target,k=t.dataset.k;if(!k)return;set(S,k,t.type==='checkbox'?t.checked:t.value);save();if(t.dataset.re&&t.type!=='number')render()});
+$('#app').addEventListener('change',ev=>{const t=ev.target;if(t.dataset.re||t.tagName==='SELECT')render()});
+$('#ld').addEventListener('change',ev=>{const f=ev.target.files[0];if(!f)return;f.text().then(x=>{try{S={...blank(),...JSON.parse(x)};save();render()}catch(err){alert('Invalid file')}})});
+pick();render();
+</script></body></html>
